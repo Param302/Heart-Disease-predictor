@@ -4,11 +4,120 @@ import pandas as pd
 
 class NotFittedError(ValueError, AttributeError):
     """
-    Exception class to raise if predict() is used before fitting.
+    Exception class to raise if data is not fitted.
     """
 
 
+class StandardScaler:
+    """
+    Standard Scaler:
+    Normalize the data into a specific range using Z-score normalization.
+
+    Z-score normalization:
+    Subtracts mean (µ) from value and divide it by standard deviation (σ)
+        normalized_data = (X - µ) / σ
+    """
+    _is_fitted = False
+
+    def fit_transform(self, X: pd.DataFrame | np.ndarray):
+        """Fit and transform data using Z-score normalization
+        Args:
+            X: data
+        Returns:
+            X_scaled: normalized data
+        """
+        X_scaled = self._z_score_normalization(X)
+        self._is_fitted = True
+        return X_scaled
+
+    def transform(self, X: pd.DataFrame | np.ndarray):
+        """Transform data using Z-score normalization
+        using evaluated mean (µ) and standard deviation (σ)
+        by `fit_transform`.
+        Args:
+            X: data
+        Returns:
+            X_scaled: normalized data
+        """
+        if not self._is_fitted:
+            raise NotFittedError("Data isn't fitted yet.\n"
+                                 "Use `fit_transform` to fit and transform actual data and then use `transform`.")
+
+        X_scaled = self._z_score_normalization(X)
+        return X_scaled
+
+    def _z_score_normalization(self, X: pd.DataFrame | np.ndarray):
+        """
+        Normalized data using Z-score normalization
+        normalized_data = (X - µ) / σ
+        Args:
+            X: data
+        Returns:
+            norm_data: normalized data
+            mu (μ): mean of each feature
+            sigma (σ): standard deviation of each feature
+        """
+        if not (hasattr(self, "mu") and hasattr(self, "sigma")):
+            # calculating mean of each feature
+            self.mu = np.mean(X, axis=0)
+            # calculating standard deviation of each feature
+            self.sigma = np.std(X, axis=0)
+
+        # normalizing data
+        norm_data = (X - self.mu) / self.sigma
+
+        return norm_data
+
+
 class LogisticRegression:
+    """Logistic Regression model
+    ----------------------------------------------------------------------
+
+    Logistic regression function f(x):
+        f(x) = g(z)
+    or more precise:
+        f(x) = 1 / (1 + e^-z)
+    where:
+        z = x.w + b
+        g(z) = 1 / (1 + e^-z)   (sigmoid)
+        f(x) = 1 / (1 + e^-z)
+    ----------------------------------------------------------------------
+
+    Logistic loss function loss(f(xi), yi):
+        loss(yi_hat, yi) =  -yi * log(yi_hat) - (1 - yi) log(1 - yi_hat)
+    where:
+        yi_hat is ith predicted value using f(x)
+        yi is actual ith target value
+    ----------------------------------------------------------------------
+
+    Logistic Cost function J(w,b):
+        cost = (1/m) * Σ (loss)
+    where:
+        w: weight(s) of parameter(s)
+        b: bias
+        m: no. of training data
+    ----------------------------------------------------------------------
+    
+    Gradient descent function:
+        for each jth feature:
+            wj = w_init[j] - α * dj_dw
+        b = b_init - α * dj_db
+    where:
+        for each jth feature:
+            dj_dw = (1/m) * Σ (f_wb(xi) - yi)*xi
+        dj_db = (1/m) * Σ (f_wb(xi) - yi)
+    ----------------------------------------------------------------------
+
+    Attributes:
+        learning_rate:      learning rate of model                  (0.05)
+        num_iters:          number of iteraions it takes            (1000)
+        random_state:       random state of model                   (0)
+        verbose:            print logged info of cost & parameters   (False)
+        accuracy:           accuracy of model      
+    Methods:
+        fit:        Fit data to train logistic regression model
+        predict:    Predict data based on trained model
+        """
 
     def __init__(self, learning_rate: int | float = 0.05, num_iters: int = 1000, random_state: int = 0, verbose: bool = False) -> None:
 
@@ -17,6 +126,7 @@ class LogisticRegression:
         self.verbose = verbose
         self.random_state = random_state
         self.random_no_gen = np.random.default_rng(self.random_state)
+        self._is_fitted = False
 
     def fit(self, X: pd.DataFrame, y: pd.Series) -> None:
         """
@@ -133,7 +243,8 @@ class LogisticRegression:
         """
         # added epsilon to ignore "divided by zero" warning which results in "nan"
         epsilon = 1e-5
-        loss = -(yi * np.log(yi_hat + epsilon) + (1 - yi) * np.log(1 - yi_hat + epsilon))
+        loss = -(yi * np.log(yi_hat + epsilon) +
+                 (1 - yi) * np.log(1 - yi_hat + epsilon))
         return loss
 
     def __compute_cost(self, yhat: np.ndarray, y: np.ndarray,
@@ -257,17 +368,33 @@ class LogisticRegression:
 
 if __name__ == "__main__":
     data = pd.read_csv("./data/train.csv")
+    # Training data
     m = 100
     X = data.iloc[:m, [0, 1, 2]]
     y = data.iloc[:m, -1]
+    # Testing data
     X_test = data.iloc[m:m+10, [0, 1, 2]]
     y_test = data.iloc[m:m+10, -1]
-    model = LogisticRegression(
-        learning_rate=1.45e-3, num_iters=10_000, verbose=True)
+
+    # Scaling data using StandardScaler()
+    scaler = StandardScaler()
+    X = scaler.fit_transform(X)
+    X_test = scaler.transform(X_test)
+
+    # Logistic Regression model
+    model = LogisticRegression(learning_rate=0.3, num_iters=1000, verbose=True)
+    # fitting data
     model.fit(X, y)
+
     print(f"Accuracy: {model.accuracy}")
+
+    # Predicting test data
     preds = model.predict(X_test)
     print("Preds:", *preds)
     print("Actual:", *y_test)
-    # Preds: 1 1 1 1 1 1 1 1 1 1
-    # Actual: 0 1 0 1 0 1 0 1 1 1
+    """
+    Output:
+    Accuracy: 0.71
+    Preds: 1 1 0 1 0 0 0 1 1 1
+    Actual: 0 1 0 1 0 1 0 1 1 1
+    """
