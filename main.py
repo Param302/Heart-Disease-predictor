@@ -2,9 +2,11 @@ import numpy as np
 import pandas as pd
 import tkinter as tk
 from tkinter import ttk
+from pickle import load
 from ttkbootstrap import Style
 from PIL import Image, ImageTk
-from logistic_regression import LogisticRegression
+from tensorflow.keras.models import load_model
+from tensorflow.keras.layers import Normalization
 
 
 class GUI(tk.Tk):
@@ -12,18 +14,17 @@ class GUI(tk.Tk):
     def __init__(self):
         super().__init__(sync=True)
         self._gui_configs()
+        self.model = self.load_model()
+        self.normalizer = self.load_scaler()
 
     def _gui_configs(self):
-        self.title("Heart Disease Predictor")
+        self.title("Heart Disease Predictor 2.0")
         self.icon = ImageTk.PhotoImage(Image.open(f"./heart.ico"))
         self.tk.call("wm", "iconphoto", self._w, self.icon)
         screen_width = self.winfo_screenwidth()
-        screen_height = self.winfo_screenheight()
         self.geometry(f"1000x900+{screen_width//4}+100")
         self.style = Style(theme="darkly")
         self.font = ["Rockwell", 30]
-        self.model = LogisticRegression(
-            learning_rate=1, num_iters=360, verbose=True)
         self.font[1] = 16
         self.style.configure("TButton", font=self.font)
         self.style.configure("TButton", justify="center")
@@ -37,26 +38,19 @@ class GUI(tk.Tk):
         self._header_frame.pack(side="top", fill="x")
 
     def _body(self):
-        self.font[1] = 20
+        self.font[1] = 18
         self._body_frame = ttk.Frame(self, style="TFrame")
 
-        self._fit_button = ttk.Button(self._body_frame, text="Train model",
-                                      style="warning.Outline.TButton", padding=(30, 10))
-        self._fit_button.pack(side="top", anchor="center", pady=20)
-        self._fit_button.bind(
-            "<Button-1>",
-            lambda e: (
-                self.fit_data(),
-                e.widget.configure(style="success.TButton",
-                                   text="Model Trained ✔"),
-                self.predict_btn.configure(state="normal"),
-            ))
+        self.acc_lbl = ttk.Label(self._body_frame,
+                                 text=f"Model Accuracy: {98.26}%",
+                                 style="warning.TLabel", font=self.font, padding=(10, 10))
+        self.acc_lbl.pack(side="top", anchor="center", pady=20)
 
+        self.font[1] = 16
         self.sep = ttk.Separator(
             self._body_frame, orient="horizontal", style="secondary.TSeparator")
         self.sep.pack(side="top", fill="x", pady=(0, 20))
 
-        self.font[1] = 16
         self._chol_frame = ttk.Frame(
             self._body_frame, style="TFrame", padding=(120, 0, 0, 0))
         self.chol = tk.StringVar()
@@ -183,19 +177,10 @@ class GUI(tk.Tk):
 
         self.predict_btn = ttk.Button(self._body_frame, text="Predict",
                                       style="success.Outline.TButton", padding=(50, 10),
-                                      command=self.show, state="disabled")
+                                      command=self.show)
         self.predict_btn.pack(side="top", anchor="center")
 
         self._body_frame.pack(side="top", fill="both", expand=True)
-
-    def fit_data(self):
-        data = pd.read_csv("./data/train.csv")
-        X = data[["chol", "thalach", "cp", "exang",
-                  "age", "sex", "trestbps", "fbs"]]
-        Y = data.loc[:, "target"]
-        X, self.mu, self.sigma = standardization(X)
-        self.model.fit(X, Y)
-        return 1
 
     def predict(self):
         chol = int(self.chol.get())
@@ -207,60 +192,41 @@ class GUI(tk.Tk):
         trestbps = int(self.trestbps.get())
         fbs = self.fbs.get()
 
-        data = pd.DataFrame(
-            {"chol": [chol],
-             "thalach": [thalach],
-             "cp": [cp],
-             "exang": [exang],
-             "age": [age],
-             "sex": [sex],
-             "trestbps": [trestbps],
-             "fbs": [fbs]
-             })
-        data = (data - self.mu) / self.sigma
-        return self.model.predict(data)
+        data = np.array([[age, sex, cp, trestbps, chol, fbs, thalach, exang]])
+        data = self.normalizer(data)
+
+        logits = self.model(data)
+        pred = tf.nn.sigmoid(logits)
+        prediction = 1 if pred[0][0] >= 0.5 else 0
+        return prediction
 
     def show(self):
-        self.preds = self.predict()[0]
+        self.preds = self.predict()
         text = "Yes" if self.preds == 1 else "No"
 
         if hasattr(self, "_pred_lbl"):
-            self._pred_lbl.configure(text=text, 
-            style=("success" if self.preds == 0 else "danger") + ".Inverse.TLabel")
-    
+            self._pred_lbl.configure(text=text,
+                                     style=("success" if self.preds == 0 else "danger") + ".Inverse.TLabel")
+            return
         self._pred_lbl = ttk.Label(self._body_frame, text=text, style=(
             "success" if self.preds == 0 else "danger") + ".inverse.TLabel", font=self.font, padding=(20, 10))
-        self._pred_lbl.pack(side="left", anchor="center", padx=(300, 0))
+        self._pred_lbl.pack(side="top", anchor="center", pady=10)
 
-        if hasattr(self, "acc_lbl"):    return
-        self.acc_lbl = ttk.Label(self._body_frame,
-                                 text=f"Model Accuracy: {self.model.accuracy*100}%",
-                                 style="warning.TLabel", font=self.font, padding=(10, 10))
-        self.acc_lbl.pack(side="right", anchor="center", padx=(0, 300))
+    @staticmethod
+    def load_model():
+        return load_model("./final_model.h5")
+
+    @staticmethod
+    def load_scaler():
+        weights = load(open("./weights/normalized_weights.bin", "rb"))
+        scaler = Normalization(weights=weights)
+        return scaler
 
     def run(self):
         self._header()
         self._body()
+        self.focus_force()
         self.mainloop()
-
-
-def standardization(X: pd.DataFrame) -> tuple[pd.DataFrame | float]:
-    """
-    Normalized data using Z-score normalization
-    Args:
-        X: data
-    Returns:
-        norm_data: normalized data
-        mu (μ): mean of each feature
-        sigma (σ): standard deviation of each feature
-    """
-    # calculating mean of each feature
-    mu = np.mean(X, axis=0)
-    # calculating standard deviation of each feature
-    sigma = np.std(X, axis=0)
-    # normalizing data
-    norm_data = (X - mu) / sigma
-    return norm_data, mu, sigma
 
 
 if __name__ == "__main__":
