@@ -13,6 +13,8 @@ It takes $8$ parameters and do prediction based on them
 - Maximum Heart Rate
 - Blood sugar above 120mg/dl (yes / no)
 - Cholesterol
+
+
 ![preview](./preview_2.0.jpg)
 
 ### Model details
