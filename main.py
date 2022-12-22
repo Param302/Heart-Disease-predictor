@@ -3,6 +3,7 @@ import pandas as pd
 import tkinter as tk
 from tkinter import ttk
 from pickle import load
+import tensorflow as tf
 from ttkbootstrap import Style
 from PIL import Image, ImageTk
 from tensorflow.keras.models import load_model
